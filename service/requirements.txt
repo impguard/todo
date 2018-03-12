@@ -1,0 +1,4 @@
+ipython==6.2.1
+flask==0.12.2
+flask-swagger==0.2.13
+git+git://github.com/kang-health/fptools.git@06658a60c23b3b8b4afe8b068ff96d891189bc2f

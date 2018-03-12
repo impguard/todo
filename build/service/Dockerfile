@@ -9,8 +9,9 @@ FROM python:3.6
 ENV NGINX_VERSION 1.12.0-1~jessie
 ENV NJS_VERSION   1.12.0.0.1.10-1~jessie
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends --no-install-suggests -y gnupg2 \
+RUN apt-get update
+
+RUN apt-get install --no-install-recommends --no-install-suggests -y gnupg2 \
     && \
     NGINX_GPGKEY=573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62; \
     found=''; \
@@ -33,8 +34,7 @@ RUN apt-get update \
                         nginx-module-geoip=${NGINX_VERSION} \
                         nginx-module-image-filter=${NGINX_VERSION} \
                         nginx-module-njs=${NJS_VERSION} \
-                        gettext-base \
-    && rm -rf /var/lib/apt/lists/*
+                        gettext-base
 
 # forward request and error logs to docker log collector
 RUN ln -sf /dev/stdout /var/log/nginx/access.log \
@@ -44,8 +44,7 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 # Install supervisord
 ########################################
 
-RUN apt-get update && apt-get install -y supervisor \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get install -y supervisor
 
 ########################################
 # Install gunicorn
@@ -57,19 +56,19 @@ RUN pip install gunicorn
 # Install useful debug utilities
 ########################################
 
-RUN apt-get update && apt-get install -y vim \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y vim
 
 ########################################
-# Copy service directories
+# Cleanup apt
 ########################################
 
-COPY ./service /service
+RUN rm -rf /var/lib/apt/lists/*
 
 ########################################
 # Install application dependencies
 ########################################
 
+COPY ./service/requirements.txt /service/requirements.txt
 RUN pip install -r /service/requirements.txt
 
 ########################################
@@ -91,6 +90,8 @@ COPY ./build/service/gunicorn.conf /etc/gunicorn/conf.d/
 ########################################
 # Add application files
 ########################################
+
+COPY ./service /service/
 
 WORKDIR /service
 

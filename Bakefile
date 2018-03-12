@@ -12,7 +12,7 @@ db_user="admin"
 db_password=default
 db_seed="db/seeds/local/"
 
-service_image=todo:latest
+service_image=todo_service:latest
 
 function command-not-found ()
 {
@@ -111,6 +111,8 @@ function start.service ()
 
   docker run -d --rm --name "$docker_service" \
     -v "$(pwd)/service:/service" \
+    -p "80:80" \
+    -e "GUNICORN_RELOAD=True" \
     --network "$docker_network" \
     "$service_image" >/dev/null
 }
@@ -121,30 +123,48 @@ function start ()
   check-init
   check-build
 
-  start.db
-  bake_echo_green "Started database. Logs at: docker logs -f $docker_db"
-  flyway migrate >/dev/null 2>&1
-  bake_echo_green "Ran latest database migrations."
+  local container="${1:-}"
+  if [ -z "$container" ]; then
+    container="all"
+  fi
 
-  start.service
-  bake_echo_green "Started service. Logs at: docker logs -f $docker_service"
+  if [ "$container" == "all" ] || [ "$container" == "db" ]; then
+    start.db
+    bake_echo_green "Started database. Logs at: bake logs db"
+    flyway migrate >/dev/null 2>&1
+    bake_echo_green "Ran latest database migrations."
+  fi
 
+  if [ "$container" == "all" ] || [ "$container" == "service" ]; then
+    start.service
+    bake_echo_green "Started service. Logs at: bake logs service"
+  fi
 }
 
 bake_task stop "Stops all running services."
+# shellcheck disable=SC2120
 function stop ()
 {
-  docker kill "$docker_db" >/dev/null 2>&1 || true
-  bake_echo_green "Stopped local database"
+  local container="${1:-}"
+  if [ -z "$container" ]; then
+    container="all"
+  fi
 
-  docker kill "$docker_service" >/dev/null 2>&1 || true
-  bake_echo_green "Stopped local service"
+  if [ "$container" == "all" ] || [ "$container" == "db" ]; then
+    docker kill "$docker_db" >/dev/null 2>&1 || true
+    bake_echo_green "Stopped local database"
+  fi
+
+  if [ "$container" == "all" ] || [ "$container" == "service" ]; then
+    docker kill "$docker_service" >/dev/null 2>&1 || true
+    bake_echo_green "Stopped local service"
+  fi
 }
 
 bake_task clean "Cleans all local build artifacts"
 function clean ()
 {
-  stop
+  stop all
 
   docker network rm "$docker_network" >/dev/null 2>&1 || true
   bake_echo_green "Cleaned docker network: $docker_network"
@@ -218,7 +238,6 @@ function psql ()
 bake_task logs "Display logs for a container."
 function logs ()
 {
-
   if [ "${1:-}" == "service" ]; then
     exec docker logs -f "$docker_service"
   fi
@@ -229,4 +248,25 @@ function logs ()
 
   bake_echo_red "Please provide: service or db"
   exit 1
+}
+
+bake_task shell "Shell into a container."
+function shell ()
+{
+  if [ "${1:-}" == "service" ]; then
+    exec docker exec -it "$docker_service" /bin/bash
+  fi
+
+  if [ "${1:-}" == "db" ]; then
+    exec docker exec -it "$docker_db" /bin/bash
+  fi
+
+  bake_echo_red "Please provide: service or db"
+  exit 1
+}
+
+bake_task ipython "Runs ipython in the service container."
+function ipython ()
+{
+  exec docker exec -it "$docker_service" /bin/bash -c ipython
 }

@@ -1,0 +1,17 @@
+Version of the API
+---
+tags:
+    - /api/version
+definitions:
+    - schema:
+        id: version
+        type: object
+        properties:
+            release:
+                type: string
+                description: The current release of the API
+responses:
+    200:
+        description: Version info returned
+        schema:
+            $ref: "#/definitions/version"
