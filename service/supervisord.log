@@ -1,0 +1,10 @@
+2018-03-12 01:21:43,047 CRIT Set uid to user 0
+2018-03-12 01:21:43,058 INFO RPC interface 'supervisor' initialized
+2018-03-12 01:21:43,062 INFO supervisord started with pid 1
+2018-03-12 01:21:44,068 INFO spawned: 'nginx' with pid 9
+2018-03-12 01:21:45,074 INFO success: nginx entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2018-03-12 01:23:20,051 CRIT Set uid to user 0
+2018-03-12 01:23:20,057 INFO RPC interface 'supervisor' initialized
+2018-03-12 01:23:20,060 INFO supervisord started with pid 1
+2018-03-12 01:23:21,064 INFO spawned: 'nginx' with pid 9
+2018-03-12 01:23:22,069 INFO success: nginx entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)

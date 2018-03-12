@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-
 docker_network=todo_network
 docker_volume=todo_volume
 docker_db=todo_db
+docker_service=todo_service
 
 db_host=localhost
 db_port=5432
@@ -12,16 +12,25 @@ db_user="admin"
 db_password=default
 db_seed="db/seeds/local/"
 
+service_image=todo:latest
 
 function command-not-found ()
 {
   ! command -v "$1" >/dev/null 2>&1
 }
 
-function check-initialized ()
+function check-init ()
+{
+  if [ ! -f .init ]; then
+    bake_echo_red "Please run init first: bake init"
+    exit 1
+  fi
+}
+
+function check-build ()
 {
   if [ ! -f .build ]; then
-    bake_echo_red "Please run init first: bake init"
+    bake_echo_red "Please run build first: bake build"
     exit 1
   fi
 }
@@ -54,6 +63,17 @@ function init ()
     bake_echo_green "Setup docker volume: $docker_volume"
   fi
 
+  touch .init
+}
+
+bake_task build "Build artifacts to be run."
+function build ()
+{
+  check-init
+
+  docker build -f build/service/Dockerfile -t "$service_image" .
+  bake_echo_green "Built service"
+
   touch .build
 }
 
@@ -76,7 +96,6 @@ function start.db ()
 
   while true; do
     if command psql -t -c "select now()" "$url" >/dev/null 2>&1; then
-      bake_echo_green "Database started"
       break
     fi
     bake_echo_yellow "Waiting for database to start"
@@ -84,22 +103,42 @@ function start.db ()
   done
 }
 
+function start.service ()
+{
+  if docker top "$docker_service" >/dev/null 2>&1; then
+    return
+  fi
+
+  docker run -d --rm --name "$docker_service" \
+    -v "$(pwd)/service:/service" \
+    --network "$docker_network" \
+    "$service_image" >/dev/null
+}
+
 bake_task start "Starts everything locally."
 function start ()
 {
-  check-initialized
+  check-init
+  check-build
 
   start.db
-  flyway migrate
+  bake_echo_green "Started database. Logs at: docker logs -f $docker_db"
+  flyway migrate >/dev/null 2>&1
+  bake_echo_green "Ran latest database migrations."
+
+  start.service
+  bake_echo_green "Started service. Logs at: docker logs -f $docker_service"
+
 }
 
 bake_task stop "Stops all running services."
 function stop ()
 {
-  check-initialized
-
   docker kill "$docker_db" >/dev/null 2>&1 || true
   bake_echo_green "Stopped local database"
+
+  docker kill "$docker_service" >/dev/null 2>&1 || true
+  bake_echo_green "Stopped local service"
 }
 
 bake_task clean "Cleans all local build artifacts"
@@ -174,4 +213,20 @@ function psql ()
 {
   local url="postgresql://$db_user:$db_password@$db_host:$db_port/$db_database"
   command psql $url "$@"
+}
+
+bake_task logs "Display logs for a container."
+function logs ()
+{
+
+  if [ "${1:-}" == "service" ]; then
+    exec docker logs -f "$docker_service"
+  fi
+
+  if [ "${1:-}" == "db" ]; then
+    exec docker logs -f "$docker_db"
+  fi
+
+  bake_echo_red "Please provide: service or db"
+  exit 1
 }
