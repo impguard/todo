@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+
+docker_network=todo_network
+docker_volume=todo_volume
+docker_db=todo_db
+
+db_host=localhost
+db_port=5432
+db_database=todo
+db_user="admin"
+db_password=default
+db_seed="db/seeds/local/"
+
+
+function command-not-found ()
+{
+  ! command -v "$1" >/dev/null 2>&1
+}
+
+function check-initialized ()
+{
+  if [ ! -f .build ]; then
+    bake_echo_red "Please run init first: bake init"
+    exit 1
+  fi
+}
+
+bake_task init "Initialize a local development environment."
+function init ()
+{
+  if command-not-found flyway; then
+    bake_echo_red "Please install flyway: brew install flyway"
+    exit 1
+  fi
+
+  if command-not-found psql; then
+    bake_echo_red "Please install postgres: brew install postgresql"
+    exit 1
+  fi
+
+  if command-not-found docker; then
+    bake_echo_red "Please install docker: brew install docker"
+    exit 1
+  fi
+
+  if ! docker network inspect "$docker_network" >/dev/null 2>&1; then
+    docker network create "$docker_network" >/dev/null
+    bake_echo_green "Setup docker network: $docker_network"
+  fi
+
+  if ! docker volume inspect "$docker_volume" >/dev/null 2>&1; then
+    docker volume create "$docker_volume" >/dev/null
+    bake_echo_green "Setup docker volume: $docker_volume"
+  fi
+
+  touch .build
+}
+
+function start.db ()
+{
+  local url="postgresql://$db_user:$db_password@$db_host:$db_port/$db_database"
+
+  if docker top "$docker_db" >/dev/null 2>&1; then
+    return
+  fi
+
+  docker run -d --rm --name "$docker_db" \
+    -e POSTGRES_PASSWORD="$db_password" \
+    -e POSTGRES_USER="$db_user" \
+    -e POSTGRES_DB="$db_database" \
+    -p 5432:5432 \
+    -v "$docker_volume" \
+    --network "$docker_network" \
+    "postgres:10.3" >/dev/null
+
+  while true; do
+    if command psql -t -c "select now()" "$url" >/dev/null 2>&1; then
+      bake_echo_green "Database started"
+      break
+    fi
+    bake_echo_yellow "Waiting for database to start"
+    sleep 1
+  done
+}
+
+bake_task start "Starts everything locally."
+function start ()
+{
+  check-initialized
+
+  start.db
+  flyway migrate
+}
+
+bake_task stop "Stops all running services."
+function stop ()
+{
+  check-initialized
+
+  docker kill "$docker_db" >/dev/null 2>&1 || true
+  bake_echo_green "Stopped local database"
+}
+
+bake_task clean "Cleans all local build artifacts"
+function clean ()
+{
+  stop
+
+  docker network rm "$docker_network" >/dev/null 2>&1 || true
+  bake_echo_green "Cleaned docker network: $docker_network"
+
+  docker volume rm "$docker_volume" >/dev/null 2>&1 || true
+  bake_echo_green "Cleaned docker volume: $docker_volume"
+
+  rm .build >/dev/null 2>&1 || true
+  bake_echo_green "Cleaned project"
+}
+
+bake_task flyway "Runs the flyway command. Default environment is local."
+function flyway ()
+{
+  local locations="filesystem:db/migrations,filesystem:$db_seed"
+  local url="jdbc:postgresql://$db_host:$db_port/$db_database"
+
+  command flyway -user="$db_user" \
+         -password="$db_password" \
+         -url="$url" \
+         -locations="$locations" \
+         "$@"
+}
+
+function handle.migration ()
+{
+  local raw_description="$1"
+  local description version
+  description=$(echo "${raw_description// /_}" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -d .)
+  version=$(date -u +"%Y%m%d.%H%M%S")
+
+  local migration_file="V${version}__${description}.sql"
+  local destination="$2"
+
+  echo "/* $raw_description */" > "$destination/$migration_file"
+  echo "Created \"$raw_description\" at $destination/$migration_file"
+
+}
+
+bake_task create.migration "Create a new migration."
+function create.migration ()
+{
+  if [ -z "${1:-}" ]; then
+    bake_echo_red "Please pass a short description of the migration."
+    exit 1
+  fi
+
+  handle.migration "$1" "db/migrations"
+}
+
+bake_task create.seed "Create a new seed file."
+function create.seed ()
+{
+  if [ -z "${1:-}" ]; then
+    bake_echo_red "Please pass a short description of the seed."
+    exit 1
+  fi
+
+  handle.migration "$1" "$db_seed"
+}
+
+bake_task psql "psql into the database."
+function psql ()
+{
+  local url="postgresql://$db_user:$db_password@$db_host:$db_port/$db_database"
+  command psql $url "$@"
+}
